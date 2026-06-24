@@ -10,7 +10,7 @@
 #           - tor_trees         (~1,249,665 rows, Point, EPSG:4326)
 #
 # Prerequisites:
-#   - Docker container "gis_postgis" running (docker compose up -d)
+#   - Docker container "tor_gis_postgis" running (docker compose up -d)
 #   - GDAL installed (ogr2ogr --version to check)
 #
 # Usage:    bash load_data.sh
@@ -90,7 +90,7 @@ rm -rf "$TMP_DIR"
 rm -rf "$INPUT_ZIP"
 
 
-# # --- Wait for PostGIS to be ready -----------------------------------------
+# --- Wait for PostGIS to be ready -----------------------------------------
 echo ""
 echo "⏳ Checking PostGIS connection..."
 for i in $(seq 1 10); do
@@ -107,7 +107,7 @@ for i in $(seq 1 10); do
     sleep 3
 done
 
-# # --- Load neighborhoods into PostGIS --------------------------------------
+# --- Load neighborhoods into PostGIS --------------------------------------
 echo ""
 echo "📤 Loading neighborhoods into PostGIS..."
 # -nln        = set the table name
@@ -125,8 +125,8 @@ ogr2ogr \
     -t_srs EPSG:4326
 
  echo "✅ Loaded tor_neighborhoods table"
-
-# # --- Load trees into PostGIS -------------------------------------------
+ 
+# --- Load trees into PostGIS -------------------------------------------
 echo ""
 echo "📤 Loading trees into PostGIS (this may take a moment)..."
 ogr2ogr \
