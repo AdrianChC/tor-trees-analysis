@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # load_data.sh
 # ---------------------------------------------------------------------------
-# Downloads NYC Open Data GeoJSON files and loads them into PostGIS using
-# ogr2ogr (part of GDAL).
+# Downloads City of Toronto Open Data SHP file, turn it into GeoJSON files
+# and loads them into PostGIS using # ogr2ogr (part of GDAL).
 #
-# Inputs:   None — downloads data from NYC Open Data API.
+# Inputs:   None — downloads data from City of Toronto's CKAN open-data portal.
 # Outputs:  Two PostGIS tables in the "gis" database:
-#           - nyc_neighborhoods  (~262 rows, MultiPolygon, EPSG:4326)
-#           - nyc_hydrants       (~109,000 rows, Point, EPSG:4326)
+#           - tor_neighborhoods (~158 rows, MultiPolygon, EPSG:4326)
+#           - tor_trees         (~1,249,665 rows, Point, EPSG:4326)
 #
 # Prerequisites:
 #   - Docker container "gis_postgis" running (docker compose up -d)
@@ -19,45 +19,78 @@
 set -e  # Stop on first error so students see exactly which step failed
 
 # --- Configuration --------------------------------------------------------
-DATA_DIR="./data"
+DATA_DIR="./data/raw"
 PG="PG:host=localhost port=5432 dbname=gis user=gis password=gis"
 
-# NYC Open Data SODA API endpoints (GeoJSON format)
-NTA_URL="https://data.cityofnewyork.us/resource/9nt8-h7nd.geojson?\$limit=300"
-HYDRANT_URL="https://data.cityofnewyork.us/resource/5bgh-vtsn.geojson?\$limit=120000"
+# Toronto CKAN Open Data links
+TORN_URL="https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/5e7a8234-f805-43ac-820f-03d7c360b588/resource/737b29e0-8329-4260-b6af-21555ab24f28/download/City%20Wards%20Data%20-%204326.geojson"
+TREE_URL="https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/84f16008-8040-40ba-844d-c1d3863b80f6/resource/16f63d08-22e3-4957-a6b9-f78bf2af46da/download/tree_wgs84.zip"
 
 # --- Create data directory ------------------------------------------------
 mkdir -p "$DATA_DIR"
 echo "📁 Data directory ready: $DATA_DIR"
 
-# --- Download neighborhoods -----------------------------------------------
+# --- Download neighborhoods GeoJSON file -----------------------------------
 echo ""
-echo "⬇️  Downloading NYC Neighborhood Tabulation Areas (NTAs)..."
-curl -L -o "$DATA_DIR/nyc_neighborhoods.geojson" "$NTA_URL"
+echo "⬇️  Downloading TOR Neighborhoods (158 )..."
+curl -L -o "$DATA_DIR/tor_neighborhoods.geojson" "$TORN_URL"
 
 # Quick check — file should be more than 1 KB
-FILE_SIZE=$(wc -c < "$DATA_DIR/nyc_neighborhoods.geojson" | tr -d ' ')
+FILE_SIZE=$(wc -c < "$DATA_DIR/tor_neighborhoods.geojson" | tr -d ' ')
 if [ "$FILE_SIZE" -lt 1000 ]; then
     echo "❌ ERROR: neighborhoods file is only $FILE_SIZE bytes — download may have failed."
     echo "   Check the URL or your internet connection."
     exit 1
 fi
-echo "✅ Downloaded nyc_neighborhoods.geojson ($FILE_SIZE bytes)"
+echo "✅ Downloaded tor_neighborhoods.geojson ($FILE_SIZE bytes)"
 
-# --- Download hydrants ----------------------------------------------------
+# --- Download trees ZIP file -------------------------------------------------
 echo ""
-echo "⬇️  Downloading NYC fire hydrants (this may take a minute — ~110K records)..."
-curl -L -o "$DATA_DIR/nyc_hydrants.geojson" "$HYDRANT_URL"
+echo "⬇️  Downloading TOR trees points (this may take a minute — ~1.25M records)..."
+curl -L -o "$DATA_DIR/tor_trees.zip" "$TREE_URL"
 
-FILE_SIZE=$(wc -c < "$DATA_DIR/nyc_hydrants.geojson" | tr -d ' ')
+FILE_SIZE=$(wc -c < "$DATA_DIR/tor_trees.zip" | tr -d ' ')
 if [ "$FILE_SIZE" -lt 1000 ]; then
-    echo "❌ ERROR: hydrants file is only $FILE_SIZE bytes — download may have failed."
+    echo "❌ ERROR: trees file is only $FILE_SIZE bytes — download may have failed."
     echo "   Check the URL or your internet connection."
     exit 1
 fi
-echo "✅ Downloaded nyc_hydrants.geojson ($FILE_SIZE bytes)"
+echo "✅ Downloaded tor_trees.zip ($FILE_SIZE bytes)"
 
-# --- Wait for PostGIS to be ready -----------------------------------------
+# --- Create neighborhoods GeoJSON file --------------------------------------
+INPUT_ZIP="$DATA_DIR/tor_trees.zip"
+OUTPUT_GEOJSON="$DATA_DIR/tor_trees.geojson"
+
+## temp working directory
+TMP_DIR=$(mktemp -d)
+
+echo ""
+echo "📦 Unzipping TOR trees file"
+unzip -q "$INPUT_ZIP" -d "$TMP_DIR"
+
+## find the .shp file inside the extracted folder
+SHP_FILE=$(find "$TMP_DIR" -name "*.shp" | head -n 1)
+
+if [ -z "$SHP_FILE" ]; then
+  echo "Error: No .shp file found in ZIP"
+  exit 1
+fi
+
+## convert .shp to .geojson
+echo "🔄 Converting to GeoJSON format"
+
+ogr2ogr -f GeoJSON "$OUTPUT_GEOJSON" "$SHP_FILE"
+
+FILE_SIZE=$(wc -c < "$DATA_DIR/tor_trees.geojson" | tr -d ' ')
+
+echo "✅ Created tor_trees.geojson ($FILE_SIZE bytes)"
+
+# cleanup
+rm -rf "$TMP_DIR"
+rm -rf "$INPUT_ZIP"
+
+
+# # --- Wait for PostGIS to be ready -----------------------------------------
 echo ""
 echo "⏳ Checking PostGIS connection..."
 for i in $(seq 1 10); do
@@ -74,7 +107,7 @@ for i in $(seq 1 10); do
     sleep 3
 done
 
-# --- Load neighborhoods into PostGIS --------------------------------------
+# # --- Load neighborhoods into PostGIS --------------------------------------
 echo ""
 echo "📤 Loading neighborhoods into PostGIS..."
 # -nln        = set the table name
@@ -84,29 +117,29 @@ echo "📤 Loading neighborhoods into PostGIS..."
 ogr2ogr \
     -f "PostgreSQL" \
     "$PG" \
-    "$DATA_DIR/nyc_neighborhoods.geojson" \
-    -nln nyc_neighborhoods \
+    "$DATA_DIR/tor_neighborhoods.geojson" \
+    -nln tor_neighborhoods \
     -overwrite \
     -lco GEOMETRY_NAME=wkb_geometry \
     -lco FID=gid \
     -t_srs EPSG:4326
 
-echo "✅ Loaded nyc_neighborhoods table"
+ echo "✅ Loaded tor_neighborhoods table"
 
-# --- Load hydrants into PostGIS -------------------------------------------
+# # --- Load trees into PostGIS -------------------------------------------
 echo ""
-echo "📤 Loading hydrants into PostGIS (this may take a moment)..."
+echo "📤 Loading trees into PostGIS (this may take a moment)..."
 ogr2ogr \
     -f "PostgreSQL" \
     "$PG" \
-    "$DATA_DIR/nyc_hydrants.geojson" \
-    -nln nyc_hydrants \
+    "$DATA_DIR/tor_trees.geojson" \
+    -nln tor_trees \
     -overwrite \
     -lco GEOMETRY_NAME=wkb_geometry \
     -lco FID=gid \
     -t_srs EPSG:4326
 
-echo "✅ Loaded nyc_hydrants table"
+echo "✅ Loaded tor_trees table"
 
 # --- Verify ---------------------------------------------------------------
 echo ""
@@ -115,12 +148,12 @@ echo ""
 
 echo "--- Neighborhood count ---"
 docker compose exec -T -e PGPASSWORD=gis postgis psql -h localhost -U gis -d gis -c \
-    "SELECT COUNT(*) AS neighborhood_count FROM nyc_neighborhoods;"
+    "SELECT COUNT(*) AS neighborhood_count FROM tor_neighborhoods;"
 
 echo ""
-echo "--- Hydrant count ---"
+echo "--- Trees count ---"
 docker compose exec -T -e PGPASSWORD=gis postgis psql -h localhost -U gis -d gis -c \
-    "SELECT COUNT(*) AS hydrant_count FROM nyc_hydrants;"
+    "SELECT COUNT(*) AS trees_count FROM tor_trees;"
 
 echo ""
 echo "--- Geometry columns ---"

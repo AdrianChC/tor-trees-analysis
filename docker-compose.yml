@@ -1,0 +1,38 @@
+# docker-compose.yml
+# ---------------------------------------------------------------------------
+# Spins up a PostGIS-enabled PostgreSQL database for the GIS Accelerator.
+#
+# What it does:  Runs kartoza/postgis with a "gis" database, exposed on
+#                localhost:5432. A named volume keeps data between restarts.
+#
+# Usage:         docker compose up -d
+# Verify:        docker compose exec postgis psql -U gis -d gis -c "SELECT PostGIS_Version();"
+# Tear down:     docker compose down          (keeps data)
+#                docker compose down -v        (deletes data volume)
+# ---------------------------------------------------------------------------
+
+services:
+  postgis:
+    image: kartoza/postgis:latest # pulls the pre-built PostGIS image from Kartoza's public repository
+    container_name: tor_gis_postgis
+    ports: # maps port 5432 inside the container to your local machine so QGIS can connect
+      - "5432:5432"
+    environment: # set database variables name, username, password on first launch
+      # Database credentials — keep simple for local learning
+      POSTGRES_USER: gis
+      POSTGRES_PASS: gis
+      POSTGRES_DBNAME: gis
+      # Allow connections without SSL for local dev
+      ALLOW_IP_RANGE: "0.0.0.0/0"
+    volumes:
+      # Named volume so data survives container restarts
+      - postgis_data:/var/lib/postgresql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gis -d gis"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgis_data:

@@ -1,3 +1,12 @@
 
 # Setup Files
 github-setup.md
+postgis-setup.md
+setup.md
+
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+# Raw data
+data/raw
