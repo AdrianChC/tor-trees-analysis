@@ -1,12 +1,15 @@
 
 # Setup Files
-github-setup.md
-postgis-setup.md
+setup-github.md
+setup-postgis.md
 setup.md
 
 # pixi environments
-.pixi/*
-!.pixi/config.toml
+.pixi
+
+# symbolic links
+.venv
+.vscode
 
 # Raw data
 data/raw
