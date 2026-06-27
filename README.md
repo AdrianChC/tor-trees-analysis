@@ -61,22 +61,33 @@ cd tor-tree-analysis
 ```
 
 # Set project environment
-  make env
+Run
+```bash
+make env
+```
 
 # Start the PostGIS volume
-  make set-docker
+Run
+```bash
+make set-docker
+```
 
 More detail information in `setup-postgis.md`
 
 # Load the data
-  make load-data
+Run
+```bash
+make load-data
+```
 
 # Run the analysis with SQL
 Run each query independently. Follow the pattern to execute each query:
+```bash
   docker compose exec -T -e PGPASSWORD=gis postgis psql -h localhost -U gis -d gis -c \
   "
   Copy QUERY here
   "
+```
 
 # Set and run the analysis with Jupyter Notebook
 Set kernel from this project environment
@@ -105,4 +116,4 @@ easy to use.
 - PostGIS 16-3.4 (via Docker) + GDAL
 - GeoPandas + matplotlib
 - Jupyter Lab
-- GeoParquet
+- GeoParquetgi
