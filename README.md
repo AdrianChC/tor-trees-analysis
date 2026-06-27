@@ -116,4 +116,4 @@ easy to use.
 - PostGIS 16-3.4 (via Docker) + GDAL
 - GeoPandas + matplotlib
 - Jupyter Lab
-- GeoParquetgi
+- GeoParquet
