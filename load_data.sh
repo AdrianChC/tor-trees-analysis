@@ -16,14 +16,14 @@
 # Usage:    bash load_data.sh
 # ---------------------------------------------------------------------------
 
-set -e  # Stop on first error so students see exactly which step failed
+set -e  # Stop on first error so users see exactly which step failed
 
 # --- Configuration --------------------------------------------------------
 DATA_DIR="./data/raw"
 PG="PG:host=localhost port=5432 dbname=gis user=gis password=gis"
 
 # Toronto CKAN Open Data links
-TORN_URL="https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/5e7a8234-f805-43ac-820f-03d7c360b588/resource/737b29e0-8329-4260-b6af-21555ab24f28/download/City%20Wards%20Data%20-%204326.geojson"
+TORN_URL="https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/fc443770-ef0a-4025-9c2c-2cb558bfab00/resource/0719053b-28b7-48ea-b863-068823a93aaa/download/neighbourhoods-4326.geojson"
 TREE_URL="https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/84f16008-8040-40ba-844d-c1d3863b80f6/resource/16f63d08-22e3-4957-a6b9-f78bf2af46da/download/tree_wgs84.zip"
 
 # --- Create data directory ------------------------------------------------

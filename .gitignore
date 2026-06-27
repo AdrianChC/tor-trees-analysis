@@ -13,3 +13,7 @@ setup.md
 
 # Raw data
 data/raw
+
+# Other files
+coverage_query_progression.sql
+.deprecated

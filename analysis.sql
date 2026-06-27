@@ -1,23 +1,51 @@
 -- analysis_queries.sql
 -- ---------------------------------------------------------------------------
--- Five progressive SQL queries for spatial analysis of NYC neighborhoods
--- and fire hydrants in PostGIS.
---
--- Each query introduces ONE new concept. By Query 5 you're writing
--- spatial SQL fluently — but every step is small and grounded.
+-- Five progressive SQL queries for spatial analysis of Toronto neighborhoods
+-- and trees in PostGIS. Each query introduces ONE new concept.
 --
 -- Tables used:
---   nyc_neighborhoods  (262 rows, MultiPolygon, SRID 4326)
---   nyc_hydrants       (109,725 rows, Point, SRID 4326)
+--   tor_neighborhoods  (25 rows, MultiPolygon, SRID 4326)
+--   tor_hydrants       (1,249,665 rows, Point, SRID 4326)
 --
 -- Connection:
 --   docker compose exec -e PGPASSWORD=gis postgis \
 --     psql -h localhost -U gis -d gis
 -- ---------------------------------------------------------------------------
 
+-- =========================================================================
+-- Create Spatial Indexes for Data Tables
+-- =========================================================================
+-- New concepts: 
+--   Spatial Indexes speed up spatial queries by organizing geometries
+--   into a search tree based on their bounding boxex.
+
+--   Bounding boxes are used to quickly filter out non-matching 
+--   geometries before performing more expensive spatial comparisons
+
+--   CREATE INDEX   → what's the name of the spatial index?
+--   ON             → which table is the spatial index on?
+--   USING          → what is the type of spatial index?
+-- =========================================================================
+
+-- Neighborhoods Table Spatial Index
+CREATE INDEX 
+    idx_neighborhoods_geom
+ON 
+    tor_neighborhoods
+USING 
+    GIST (wkb_geometry);
+
+-- Trees Table Spatial Index
+CREATE INDEX 
+    idx_trees_geom
+ON 
+    tor_trees
+USING 
+    GIST (wkb_geometry);
+
 
 -- =========================================================================
--- QUERY 1: Look at the data (SELECT / FROM / WHERE)
+-- QUERY 1: What neighborhoods are in Toronto? 
 -- =========================================================================
 -- Every SQL query is a question you ask a table:
 --   SELECT  → which columns do you want?
@@ -25,158 +53,176 @@
 --   WHERE   → which rows do you want?
 -- =========================================================================
 
--- What neighborhoods are in Manhattan?
+-- Look at the data (SELECT / FROM / WHERE)
 SELECT
-    ntaname,
-    boroname
-FROM nyc_neighborhoods
-WHERE boroname = 'Manhattan'
-ORDER BY ntaname;
+    AREA_NAME,
+    AREA_SHORT_CODE
+FROM tor_neighborhoods
+ORDER BY AREA_NAME;
 
--- Expected: 38 rows — every neighborhood in Manhattan, alphabetically
-
-
--- =========================================================================
--- QUERY 2: Summarize with GROUP BY and COUNT
--- =========================================================================
--- New concept: GROUP BY collapses rows into groups.
--- COUNT(*) tallies each group.
--- Together they answer: "how many of X are in each Y?"
--- =========================================================================
-
--- How many neighborhoods are in each borough?
-SELECT
-    boroname,
-    COUNT(*) AS neighborhood_count
-FROM nyc_neighborhoods
-GROUP BY boroname
-ORDER BY neighborhood_count DESC;
-
--- Expected: 5 rows
---    boroname    | neighborhood_count
--- ---------------+--------------------
---  Queens        |                 82
---  Brooklyn      |                 69
---  Bronx         |                 50
---  Manhattan     |                 38
---  Staten Island |                 23
+-- Expected: 158 rows — every neighborhood in Toronto, alphabetically
 
 
 -- =========================================================================
--- QUERY 3: Measure with a spatial function (ST_Area)
+-- QUERY 2: How many trees are in the neighborhoods?
 -- =========================================================================
--- New concept: spatial functions. ST_Area calculates the area of a polygon.
+-- New concepts: 
+--   LEFT JOIN joins tables a to b based ON a join condition.
+--   ST_Contains(polygon, point) returns TRUE when the point is inside. 
+-- Together they answer: "which of X are in each Y?"
 --
--- Important: our data is in EPSG:4326 (degrees). ST_Area on degrees gives
--- square degrees — meaningless. Casting to ::geography tells PostGIS
--- to calculate in meters instead.
---
--- ntatype = '0' filters to residential neighborhoods (excludes parks,
--- airports, cemeteries).
--- =========================================================================
-
--- What are the 10 largest residential neighborhoods?
-SELECT
-    ntaname,
-    boroname,
-    ROUND(
-        (ST_Area(wkb_geometry::geography) / 1000000)::numeric,
-        2
-    ) AS area_km2
-FROM nyc_neighborhoods
-WHERE ntatype = '0'
-ORDER BY area_km2 DESC
-LIMIT 10;
-
--- Expected: 10 rows — all Staten Island and Queens
---                        ntaname                       |   boroname    | area_km2
--- -----------------------------------------------------+---------------+----------
---  New Springville-Willowbrook-Bulls Head-Travis       | Staten Island |    19.45
---  Todt Hill-Emerson Hill-Lighthouse Hill-Manor Heights| Staten Island |    17.31
---  Annadale-Huguenot-Prince's Bay-Woodrow             | Staten Island |    16.76
---  ...
-
-
--- =========================================================================
--- QUERY 4: Spatial join — count hydrants per neighborhood (ST_Contains)
--- =========================================================================
--- New concept: spatial JOIN. Instead of joining on a shared column (like
--- an ID), we join on geometry — "which points fall inside which polygon?"
---
--- ST_Contains(polygon, point) returns true when the point is inside.
--- We LEFT JOIN so neighborhoods with zero hydrants still appear.
 -- This is THE pattern for spatial SQL. Every spatial query is a variation.
 -- =========================================================================
 
--- How many hydrants are in each neighborhood?
+-- Matches each tree to its neighborhood (ST_Contains)
 SELECT
-    n.ntaname,
-    n.boroname,
-    COUNT(h.gid) AS hydrant_count
-FROM nyc_neighborhoods n
-LEFT JOIN nyc_hydrants h
-    ON ST_Contains(n.wkb_geometry, h.wkb_geometry)
-WHERE n.ntatype = '0'
-GROUP BY n.ntaname, n.boroname
-ORDER BY hydrant_count DESC
-LIMIT 10;
+    t.gid AS tree_id,
+    n.AREA_NAME as neighborhood    
+FROM tor_neighborhoods n
+LEFT JOIN tor_trees t
+    ON ST_Contains(n.wkb_geometry, t.wkb_geometry)
+LIMIT 5 
 
--- Expected: 10 rows — big outer-borough neighborhoods dominate
---                        ntaname                       |   boroname    | hydrant_count
--- -----------------------------------------------------+---------------+---------------
---  Annadale-Huguenot-Prince's Bay-Woodrow              | Staten Island |          1708
---  Great Kills-Eltingville                             | Staten Island |          1672
---  Todt Hill-Emerson Hill-Lighthouse Hill-Manor Heights| Staten Island |          1282
+-- Expected: 5 rows (~1,249,665 rows without LIMIT)
+--  tree_id |       neighborhood        
+-- ---------+---------------------------
+--   298088 | South Eglinton-Davisville
+--  1141535 | South Eglinton-Davisville
+--   297315 | South Eglinton-Davisville
+--   297314 | South Eglinton-Davisville
+--   300705 | South Eglinton-Davisville
 --  ...
---
--- Notice: Manhattan doesn't appear in the top 10. But is that because
--- Manhattan has fewer hydrants, or because the neighborhoods are smaller?
 
 
 -- =========================================================================
--- QUERY 5: Density — the spatial insight (combining Query 3 + Query 4)
+-- QUERY 3: How many trees are in each neighborhood?
+-- =========================================================================
+-- New concept: 
+--   GROUP BY collapses rows into groups.
+--   COUNT(t.gid) tallies each group.
+-- Together they answer: "how many of X are in each Y?"
+-- =========================================================================
+
+-- Summarize trees by neighborhood (GROUP BY and COUNT)
+SELECT
+    n.AREA_NAME as neighborhood,
+    COUNT(t.gid) AS tree_count
+FROM tor_neighborhoods n
+LEFT JOIN tor_trees t
+    ON ST_Contains(n.wkb_geometry, t.wkb_geometry)
+GROUP BY n.AREA_NAME
+ORDER BY tree_count DESC
+LIMIT 158 
+
+-- Expected: 158 rows
+--            neighborhood            | tree_count 
+-- -----------------------------------+------------
+--  Morningside Heights               |      67512
+--  West Humber-Clairville            |      28538
+--  Bridle Path-Sunnybrook-York Mills |      26897
+
+
+-- =========================================================================
+-- QUERY 4: Which neighborhoods have the DENSEST tree per km²?
 -- =========================================================================
 -- Raw counts are misleading. Big neighborhoods naturally have more of
 -- everything. Dividing count by area gives density — a fair comparison.
+-- This process is called normalization. It adjust raw counts or value 
+-- relative to another variable making comparisons fair.
 --
--- This combines what you already know:
---   COUNT(h.gid)                    → from Query 4
---   ST_Area(geometry::geography)    → from Query 3
---   hydrant_count / area            → the new part (just division)
+-- New concept: 
+--   spatial functions. ST_Area calculates the area of a polygon.
+--
+-- Important: 
+--   The data is in EPSG:4326 (degrees). 
+--   ST_Area on degrees gives square degrees — meaningless. 
+--   Casting to ::geography tells PostGIS to calculate in meters instead.
+--
+-- This combines:
+--   COUNT(t.gid)                   → from Query 3
+--   ST_Area(geometry::geography)   → from Query 4
 -- =========================================================================
 
--- Which neighborhoods have the DENSEST hydrant coverage?
+-- Calculating Tree Density to compare results (COUNT + ST_Area)
 SELECT
-    n.ntaname,
-    n.boroname,
-    COUNT(h.gid) AS hydrant_count,
+    n.AREA_NAME as neighborhood,
+    COUNT(t.gid) AS tree_count,
     ROUND(
         (ST_Area(n.wkb_geometry::geography) / 1000000)::numeric,
         2
     ) AS area_km2,
     ROUND(
-        COUNT(h.gid) / (ST_Area(n.wkb_geometry::geography) / 1000000)::numeric,
-        1
-    ) AS hydrants_per_km2
-FROM nyc_neighborhoods n
-LEFT JOIN nyc_hydrants h
-    ON ST_Contains(n.wkb_geometry, h.wkb_geometry)
-WHERE n.ntatype = '0'
-GROUP BY n.ntaname, n.boroname, n.wkb_geometry
-HAVING COUNT(h.gid) > 0
-ORDER BY hydrants_per_km2 DESC
-LIMIT 10;
+        COUNT(t.gid) / (ST_Area(n.wkb_geometry::geography) / 1000000)::numeric,
+        2
+    ) AS trees_per_km2
+FROM tor_neighborhoods n
+LEFT JOIN tor_trees t
+    ON ST_Contains(n.wkb_geometry, t.wkb_geometry)
+GROUP BY n.AREA_NAME, n.wkb_geometry
+HAVING COUNT(t.gid) > 0
+ORDER BY trees_per_km2 DESC
+LIMIT 158; 
 
--- Expected: 10 rows — ALL Manhattan. The story completely flips.
---                ntaname               | boroname  | hydrant_count | area_km2 | hydrants_per_km2
--- -------------------------------------+-----------+---------------+----------+------------------
---  Gramercy                            | Manhattan |           269 |     0.70 |            384.7
---  SoHo-Little Italy-Hudson Square     | Manhattan |           432 |     1.20 |            360.0
---  Tribeca-Civic Center                | Manhattan |           433 |     1.26 |            343.2
---  West Village                        | Manhattan |           447 |     1.34 |            333.7
---  Financial District-Battery Park City| Manhattan |           570 |     1.79 |            319.1
+--              neighborhood              | tree_count | area_km2 | trees_per_km2 
+-- ---------------------------------------+------------+----------+---------------
+--  Bridle Path-Sunnybrook-York Mills     |      26897 |     8.84 |       3041.71
+--  Lansing-Westgate                      |      16018 |     5.35 |       2994.89
 --  ...
+--  Wellington Place                      |        448 |     0.98 |        457.13
+--  Yonge-Bay Corridor                    |        378 |     1.12 |        337.76
+
+
+-- =========================================================================
+-- QUERY 5: Which neighborhoods have the highest coverage within 100 meters?
+-- =========================================================================
+-- Coverage analysis leads to a deeper finding by aggregating buffer areas
+-- of 100 m from each tree.  
 --
--- Same data as Query 4. Completely different story.
--- Staten Island has the MOST hydrants. Manhattan has the DENSEST.
--- Normalization is the honest answer.
+-- New concept: 
+--   Buffer. ST_Buffer calculates the area within a point given a radius.
+--   Union. ST_Union merges geometries into a single one with no overlaps.
+--   Intersection. ST_Intersection returns the shared area of A and B.
+--   Common Table Expresion (CTE). Calculate values once, call them later.
+-- =========================================================================
+
+-- Coverage Analysis (ST_Buffer + ST_Union + ST_Intersection)
+WITH analysis AS (
+    SELECT
+        n.AREA_NAME as neighborhood,
+        ST_Area(n.wkb_geometry :: geography) / 1000000 AS n_area,
+        ST_Area(
+            ST_Intersection(
+                (ST_Union(
+                    (ST_Buffer(t.wkb_geometry :: geography, 100) :: geometry)
+                ) :: geography),
+                n.wkb_geometry :: geography
+            )
+        ) / 1000000 AS t_area
+    FROM
+        tor_trees t
+    JOIN
+        tor_neighborhoods n
+    ON 
+        ST_Intersects(t.wkb_geometry, n.wkb_geometry)
+    GROUP BY 
+        n.AREA_NAME, n.wkb_geometry
+)
+
+SELECT
+    neighborhood,
+    ROUND(n_area :: numeric, 2) AS area_km2,
+    ROUND(t_area :: numeric, 2) AS tree_coverage_area_km2,
+    ROUND((100 * t_area / n_area) ::numeric, 2) AS coverage_percentage    
+FROM
+    analysis
+ORDER BY
+    coverage_percentage DESC
+LIMIT 158;
+
+--              neighborhood              | area_km2 | tree_coverage_area_km2 | coverage_percentage 
+-- ---------------------------------------+----------+------------------------+---------------------
+--  Caledonia-Fairbank                    |     1.55 |                   1.55 |              100.00
+--  Edenbridge-Humber Valley              |     5.51 |                   5.51 |              100.00
+--  ...
+--  Downsview                             |     8.29 |                   6.34 |               76.46
+--  St Lawrence-East Bayfront-The Islands |    11.32 |                   5.95 |               52.55
